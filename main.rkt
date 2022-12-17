@@ -23,7 +23,8 @@
 ;; See the current version of the racket style guide here:
 ;; http://docs.racket-lang.org/style/index.html
 
-;; Code here
+(define (decrypt-ports password input-port output-port)
+  (printf "TODO to perform decryption~n"))
 
 
 
@@ -41,10 +42,17 @@
   ;; http://docs.racket-lang.org/guide/Module_Syntax.html#%28part._main-and-test%29
 
   (require racket/cmdline)
-  (define who (box "world"))
+
+  ; TODO: Allow password file to be specified on the command line
+  (define (decrypt-file input output)
+    (define password (read-line))
+    (call-with-input-file* input
+      (lambda (input-port)
+        (call-with-output-file* output
+                                (lambda (output-port)
+                                  (decrypt-ports password input-port output-port))))))
+
   (command-line
-    #:program "my-program"
-    #:once-each
-    [("-n" "--name") name "Who to say hello to" (set-box! who name)]
-    #:args ()
-    (printf "hello ~a~n" (unbox who))))
+   #:program "synology-decrypt"
+   #:args (input output)
+   (decrypt-file input output)))
