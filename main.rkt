@@ -20,10 +20,11 @@
 
 ; this is convoluted, can we do better?
 (define (openssl-kdf-iter pwd salt key-size iv-size key-iv-buffer temp)
-  (if (< (bytes-length key-iv-buffer) (+ key-size iv-size))
-      (let ([temp (repeated-hash (bytes-append temp pwd salt) (if (eq? 0 (bytes-length salt)) 1 1000))])
-        (openssl-kdf-iter pwd salt key-size iv-size (bytes-append key-iv-buffer temp) temp))
-      key-iv-buffer))
+  (let ([repeat-count (if (eq? 0 (bytes-length salt)) 1 1000)])
+    (if (< (bytes-length key-iv-buffer) (+ key-size iv-size))
+        (let ([temp (repeated-hash (bytes-append temp pwd salt) repeat-count)])
+          (openssl-kdf-iter pwd salt key-size iv-size (bytes-append key-iv-buffer temp) temp))
+        key-iv-buffer)))
 
 (define (openssl-kdf pwd salt key-size iv-size)
   (let* ([count 1000]
