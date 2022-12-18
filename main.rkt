@@ -11,9 +11,6 @@
 
 (require "parser.rkt")
 
-(module+ test
-  (require rackunit))
-
 (define my-kdf (get-kdf (list 'pbkdf2 'hmac 'md5)))
 
 (define (repeated-hash start count)

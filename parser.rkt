@@ -6,9 +6,6 @@
 (require base64)
 (require (prefix-in synology: "format.b"))
 
-(module+ test
-  (require rackunit))
-
 (struct encryption-information
   (compressed
    digest-type
@@ -62,11 +59,6 @@
   (kv-pair? . -> . any)
   ; index 1 is always '(num_1 . <n>) and index 2 is the primitive
   `(,(parse-primitive (list-ref (car kv) 2)) . ,(parse-primitive (list-ref (cadr kv) 2))))
-
-(module+ test
-  (check-equal? (parse-kv '((key_1 (num_1 . 16) (string-rest_1 (length_1 . 4) (u8_1 116 121 112 101)))
-                            (value_1 (num_1 . 16) (string-rest_1 (length_1 . 8) (u8_1 109 101 116 97 100 97 116 97)))))
-                '("type" . "metadata")))
 
 (define (parse-dict-entry de)
   (case (car de)
