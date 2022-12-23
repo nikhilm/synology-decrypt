@@ -42,7 +42,24 @@
   (let ([enc1-key (decrypted-enc1-key password encryption-struct)])
     (match (openssl-kdf (hex-string->bytes (bytes->string/latin-1 enc1-key)) (bytes) 32 16)
       [(list key iv)
-       (decrypt '(aes cbc) key iv data-bytes #:pad #t)])))
+       (decrypt '(aes cbc) key iv data-bytes #:pad #f)])))
+
+; adapted from crypto-lib
+(define (unpad-bytes/pkcs7 buf)
+  (define buflen (bytes-length buf))
+  (printf "Yo ~v~n" buflen)
+  (when (zero? buflen) (error "bad PKCS7 padding"))
+  (cond
+    [(positive? (remainder buflen 8192)) ; TODO(nikhilm): This is a little fishy because the python one doesn't do it.
+     (define pad-length (bytes-ref buf (sub1 buflen)))
+     (define pad-start (- buflen pad-length))
+     (printf "~v ~v~n" pad-length pad-start)
+     (unless (and (>= pad-start 0)
+                  (for/and ([i (in-range pad-start buflen)])
+                    (= (bytes-ref buf i) pad-length)))
+       (error "bad PKCS7 padding"))
+     (subbytes buf 0 pad-start)]
+    [else buf]))
 
 (define (decrypt-ports password input-port output-port)
   (define parsed-parts (parse-synology-port input-port))
@@ -50,7 +67,9 @@
   (define file-bytes (second parsed-parts))
   (define metadata (third parsed-parts))
   (define plaintext (decrypt-data password encryption-struct file-bytes))
-  (lz4-decompress-through-ports (open-input-bytes plaintext) output-port))
+  (define stripped (unpad-bytes/pkcs7 plaintext))
+  (printf "~v~n" stripped)
+  (lz4-decompress-through-ports (open-input-bytes stripped) output-port))
 
 
 (module+ main
