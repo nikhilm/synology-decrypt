@@ -47,19 +47,20 @@
                    (printf "enc1 key ~v~n" enc1-key)
                    (openssl-kdf (hex-string->bytes (bytes->string/latin-1 enc1-key)) (bytes) 32 16)))
   (define data-dicts (second parsed-parts))
+  (define aes-ctx (make-decrypt-ctx '(aes cbc) (first key-iv) (second key-iv)))
+  ; TODO(nikhilm): If there was a way to have a lazy port, then we could have an list of closures referring to the encrypted chunks (already in memory) instead of
+  ; a list of decrypted data (another set of data in memory).
+  (define decrypted-ports
+    (let ([num-of-chunks (length data-dicts)])
+      (for/list ([data-dict (in-list data-dicts)]
+                 [i (in-naturals)])
+        (let ([decrypted-port (open-input-bytes (cipher-update aes-ctx (hash-ref data-dict "data")))])
+          (if (eq? i (sub1 num-of-chunks))
+              ; cipher-final is wrinkly since it produces additional output that we must put somewhere
+              (input-port-append #f decrypted-port (open-input-bytes (cipher-final aes-ctx)))
+              decrypted-port)))))
 
-  (define encrypted-ports
-    (for/list ([data-dict (in-list data-dicts)])
-      (open-input-bytes (hash-ref data-dict "data"))))
-  ; Ok, here is the fucked up bit about the file format.
-  ; It first encrypts the entire file using a stream cipher (stateful), along with inserting padding.
-  ; It _then_ splits the file into 8KB chunks.
-  ; This means, to reverse it, we necessarily need a state-ful decryption routine, to which we can pass encrypted chunks.
-  ; Racket doesn't seem to have it right now.
-  ; this is gonna be a super large buffer since I can't find a port based version
-  ; so we need to use make-decrypt-ctx!
-  (define decrypted-data (decrypt '(aes cbc) (first key-iv) (second key-iv) (apply input-port-append #f encrypted-ports)))
-  (lz4-decompress-through-ports (open-input-bytes decrypted-data) output-port)
+  (lz4-decompress-through-ports (apply input-port-append #f decrypted-ports) output-port)
 
   ; TODO: md5 validation
  
