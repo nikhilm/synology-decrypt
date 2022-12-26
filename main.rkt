@@ -5,6 +5,7 @@
 (require racket/match)
 (require base64)
 (require crypto)
+(require racket/system)
 (require crypto/libcrypto)
 (require (only-in file/sha1 hex-string->bytes))
 (require file/lz4)
@@ -38,39 +39,31 @@
     [(list key iv) (decrypt '(aes cbc)
                             key iv (encryption-information-enc_key1 encryption-struct) #:pad #t)]))
 
-(define (decrypt-data password encryption-struct data-bytes)
-  (let ([enc1-key (decrypted-enc1-key password encryption-struct)])
-    (match (openssl-kdf (hex-string->bytes (bytes->string/latin-1 enc1-key)) (bytes) 32 16)
-      [(list key iv)
-       (decrypt '(aes cbc) key iv data-bytes #:pad #f)])))
-
-; adapted from crypto-lib
-(define (unpad-bytes/pkcs7 buf)
-  (define buflen (bytes-length buf))
-  (printf "Yo ~v~n" buflen)
-  (when (zero? buflen) (error "bad PKCS7 padding"))
-  (cond
-    [(positive? (remainder buflen 8192)) ; TODO(nikhilm): This is a little fishy because the python one doesn't do it.
-     (define pad-length (bytes-ref buf (sub1 buflen)))
-     (define pad-start (- buflen pad-length))
-     (printf "~v ~v~n" pad-length pad-start)
-     (unless (and (>= pad-start 0)
-                  (for/and ([i (in-range pad-start buflen)])
-                    (= (bytes-ref buf i) pad-length)))
-       (error "bad PKCS7 padding"))
-     (subbytes buf 0 pad-start)]
-    [else buf]))
-
 (define (decrypt-ports password input-port output-port)
   (define parsed-parts (parse-synology-port input-port))
   (define encryption-struct (first parsed-parts))
-  (define file-bytes (second parsed-parts))
-  (define metadata (third parsed-parts))
-  (define plaintext (decrypt-data password encryption-struct file-bytes))
-  (define stripped (unpad-bytes/pkcs7 plaintext))
-  (printf "~v~n" stripped)
-  (lz4-decompress-through-ports (open-input-bytes stripped) output-port))
+  (printf "E-struct ~v~n" encryption-struct)
+  (define key-iv (let ([enc1-key (decrypted-enc1-key password encryption-struct)])
+                   (printf "enc1 key ~v~n" enc1-key)
+                   (openssl-kdf (hex-string->bytes (bytes->string/latin-1 enc1-key)) (bytes) 32 16)))
+  (define data-dicts (second parsed-parts))
 
+  (define encrypted-ports
+    (for/list ([data-dict (in-list data-dicts)])
+      (open-input-bytes (hash-ref data-dict "data"))))
+  ; Ok, here is the fucked up bit about the file format.
+  ; It first encrypts the entire file using a stream cipher (stateful), along with inserting padding.
+  ; It _then_ splits the file into 8KB chunks.
+  ; This means, to reverse it, we necessarily need a state-ful decryption routine, to which we can pass encrypted chunks.
+  ; Racket doesn't seem to have it right now.
+  ; this is gonna be a super large buffer since I can't find a port based version
+  ; so we need to use make-decrypt-ctx!
+  (define decrypted-data (decrypt '(aes cbc) (first key-iv) (second key-iv) (apply input-port-append #f encrypted-ports)))
+  (lz4-decompress-through-ports (open-input-bytes decrypted-data) output-port)
+
+  ; TODO: md5 validation
+ 
+  )
 
 (module+ main
   (require racket/cmdline)
@@ -82,9 +75,10 @@
     (define password (read-bytes-line))
     (call-with-input-file* input
       (lambda (input-port)
+        ; TODO(nikhilm): Revert truncation to error
         (call-with-output-file* output
                                 (lambda (output-port)
-                                  (decrypt-ports password input-port output-port))))))
+                                  (decrypt-ports password input-port output-port)) #:exists 'truncate))))
 
   (command-line
    #:program "synology-decrypt"

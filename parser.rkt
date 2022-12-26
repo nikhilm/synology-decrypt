@@ -3,6 +3,7 @@
 (require racket/contract)
 (require racket/match)
 (require racket/dict)
+(require racket/list)
 (require base64)
 (require (prefix-in synology: "format.b"))
 
@@ -92,6 +93,10 @@
   (for/and ([d (in-list ds)])
     (dict? d)))
 
+(define (data-dict? d)
+  #;(printf "~v ~v~n" (hash-ref d "type" #f) (equal? (hash-ref d "type" #f) "data"))
+  (equal? (hash-ref d "type" #f) "data"))
+
 (define (make-encryption-information d)
   (encryption-information
    (equal? 1 (dict-ref d "compress"))
@@ -108,7 +113,10 @@
 
 (define/contract (three-dicts-to-synology-file dicts)
   (all-dicts? . -> . any)
-  (list (make-encryption-information (car dicts)) (dict-ref (list-ref dicts 1) "data") (list-ref dicts 2)))
+  (match/values (partition data-dict? dicts)
+    ([datas metadatas]
+     (printf "chunks: ~v metadata: ~v~n" (length datas) metadatas)
+     (list (make-encryption-information (car metadatas)) datas (second metadatas)))))
 
 (define (parse-synology-port input-port)
   (let ([dicts (parse-whole (synology:format input-port))])
