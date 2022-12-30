@@ -39,7 +39,7 @@
     [(list key iv) (decrypt '(aes cbc)
                             key iv (encryption-information-enc_key1 encryption-struct) #:pad #t)]))
 
-(define (decrypt-ports password input-port output-port)
+(define (decrypt-impl-original password input-port output-port)
   (define parsed-parts (parse-synology-port input-port))
   (define encryption-struct (first parsed-parts))
   #;(printf "E-struct ~v~n" encryption-struct)
@@ -65,6 +65,11 @@
   ; TODO: md5 validation
  
   )
+
+
+(define (decrypt-ports password input-port output-port #:implementation [implementation 'original])
+  (case implementation
+      [(original) (decrypt-impl-original password input-port output-port)]))
 
 (define (decrypt-file input output)
   (define password (read-bytes-line))
