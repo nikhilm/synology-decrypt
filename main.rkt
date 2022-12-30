@@ -12,6 +12,8 @@
 
 (require "parser.rkt")
 
+(provide decrypt-ports decrypt-file)
+
 (define my-kdf (get-kdf (list 'pbkdf2 'hmac 'md5)))
 
 (define (repeated-hash start count)
@@ -69,19 +71,19 @@
 
 (define (decrypt-ports password input-port output-port #:implementation [implementation 'original])
   (case implementation
-      [(original) (decrypt-impl-original password input-port output-port)]))
+    [(original) (decrypt-impl-original password input-port output-port)]
+    [else (error "Unknown implementation")]))
 
-(define (decrypt-file input output)
+(define (decrypt-file input output #:implementation [implementation 'original])
   (define password (read-bytes-line))
   (call-with-input-file* input
     (lambda (input-port)
       ; TODO(nikhilm): Revert truncation to error, allow override for tests.
       (call-with-output-file* output
                               (lambda (output-port)
-                                (decrypt-ports password input-port output-port)) #:exists 'truncate))))
+                                (decrypt-ports password input-port output-port #:implementation implementation)) #:exists 'truncate))))
 
 (module+ test
-  (require file/md5)
   (require rackunit)
   (require racket/file)
   (crypto-factories (list libcrypto-factory))
