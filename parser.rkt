@@ -115,7 +115,7 @@
   (all-dicts? . -> . any)
   (match/values (partition data-dict? dicts)
     ([datas metadatas]
-     (printf "chunks: ~v metadata: ~v~n" (length datas) metadatas)
+     #;(printf "chunks: ~v metadata: ~v~n" (length datas) metadatas)
      (list (make-encryption-information (car metadatas)) datas (second metadatas)))))
 
 (define (parse-synology-port input-port)

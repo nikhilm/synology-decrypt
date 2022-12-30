@@ -42,9 +42,9 @@
 (define (decrypt-ports password input-port output-port)
   (define parsed-parts (parse-synology-port input-port))
   (define encryption-struct (first parsed-parts))
-  (printf "E-struct ~v~n" encryption-struct)
+  #;(printf "E-struct ~v~n" encryption-struct)
   (define key-iv (let ([enc1-key (decrypted-enc1-key password encryption-struct)])
-                   (printf "enc1 key ~v~n" enc1-key)
+                   #;(printf "enc1 key ~v~n" enc1-key)
                    (openssl-kdf (hex-string->bytes (bytes->string/latin-1 enc1-key)) (bytes) 32 16)))
   (define data-dicts (second parsed-parts))
   (define aes-ctx (make-decrypt-ctx '(aes cbc) (first key-iv) (second key-iv)))
@@ -66,21 +66,36 @@
  
   )
 
+(define (decrypt-file input output)
+  (define password (read-bytes-line))
+  (call-with-input-file* input
+    (lambda (input-port)
+      ; TODO(nikhilm): Revert truncation to error, allow override for tests.
+      (call-with-output-file* output
+                              (lambda (output-port)
+                                (decrypt-ports password input-port output-port)) #:exists 'truncate))))
+
+(module+ test
+  (require file/md5)
+  (require rackunit)
+  (require racket/file)
+  (crypto-factories (list libcrypto-factory))
+  (let [(encrypted-file (build-path (current-directory) "test-data" "csenc" "5000words-3.1.txt"))
+        (expected-decrypted-file (build-path (current-directory) "test-data" "plain" "5000words-3.1.txt"))
+        (actual-decrypted-file (make-temporary-file* #"synology-decrypt-test" #".txt"))]
+    (parameterize ([current-input-port (open-input-bytes #"buJx9/y9fV")])
+      (decrypt-file encrypted-file actual-decrypted-file))
+    ; todo attach exn handler so we always remove
+    (check-true (system* "/usr/bin/diff" expected-decrypted-file actual-decrypted-file))
+    (delete-file actual-decrypted-file)))
+
 (module+ main
   (require racket/cmdline)
 
   (crypto-factories (list libcrypto-factory))
 
   ; TODO: Allow password file to be specified on the command line
-  (define (decrypt-file input output)
-    (define password (read-bytes-line))
-    (call-with-input-file* input
-      (lambda (input-port)
-        ; TODO(nikhilm): Revert truncation to error
-        (call-with-output-file* output
-                                (lambda (output-port)
-                                  (decrypt-ports password input-port output-port)) #:exists 'truncate))))
-
+  
   (command-line
    #:program "synology-decrypt"
    #:args (input output)
