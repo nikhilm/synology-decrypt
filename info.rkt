@@ -9,4 +9,4 @@
 (define pkg-desc "Description Here")
 (define version "0.1")
 (define pkg-authors '(me@nikhilism.com))
-(define license '(Apache-2.0))
+(define license 'Apache-2.0)
