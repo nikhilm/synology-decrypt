@@ -120,9 +120,12 @@
   (thread-wait lz4-thread))
   
 (define (decrypt-external-lz4 password input-port output-port)
+  (define lz4-path (find-executable-path "lz5"))
+  (unless lz4-path
+    (error "lz4 command not found. Please make sure it is installed and in the path."))
   (match-define-values (lz4-proc lz4-stdout lz4-stdin lz4-stderr)
     (subprocess output-port #f #f
-                "/usr/bin/lz4"
+                lz4-path
                 "-d"))
   (decrypt-recursive password input-port lz4-stdin)
   (close-output-port lz4-stdin)
@@ -139,11 +142,10 @@
 
 (define (decrypt-file input output #:external-lz4 [use-external-lz4 'decide])
   (define password (read-bytes-line))
-  ; TODO eventually also fall back if external lz4 does not exist.
   ; right now the 1mb number is pulled out of thin air. needs benchmarking.
   (define external-lz4 (if (eq? use-external-lz4 'decide)
-                               (> (file-size input) (* 1024 1024))
-                               use-external-lz4))
+                           (and (> (file-size input) (* 1024 1024)) (find-executable-path "lz4"))
+                           use-external-lz4))
   (call-with-input-file* input
     (lambda (input-port)
       ; TODO(nikhilm): Revert truncation to error, allow override for tests.
