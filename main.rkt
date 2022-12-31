@@ -144,7 +144,7 @@
                  ; then data chunks
                  ; then metadata
                  eof)))
-
+#;
   (define (decrypt-impl-recursive password input-port output-port)
     (define generator (recursive-parser-gen input-port))
     (define encryption-struct (generator))
@@ -164,7 +164,31 @@
       (write-bytes (cipher-update aes-ctx (hash-ref dict "data")) decrypted-write-port))
     (write-bytes (cipher-final aes-ctx) decrypted-write-port)
     (close-output-port decrypted-write-port)
-    (thread-wait lz4-thread)))
+    (thread-wait lz4-thread))
+
+  ; using external lz4 process
+  (define (decrypt-impl-recursive password input-port output-port)
+    (define generator (recursive-parser-gen input-port))
+    (define encryption-struct (generator))
+    (define key-iv (let ([enc1-key (decrypted-enc1-key password encryption-struct)])
+                     (openssl-kdf (hex-string->bytes (bytes->string/latin-1 enc1-key)) (bytes) 32 16)))
+    (define aes-ctx (make-decrypt-ctx '(aes cbc) (first key-iv) (second key-iv)))
+    (match-define-values (decrypted-read-port decrypted-write-port) (make-pipe 8192))
+
+    (match-define-values (lz4-proc lz4-stdout lz4-stdin lz4-stderr)
+      (subprocess output-port #f #f
+                  "/usr/bin/lz4"
+                  "-d"))
+    (printf "~v ~v ~v ~v~n" lz4-proc lz4-stdin lz4-stdout lz4-stderr)
+
+    (for ([dict (in-producer generator eof)]
+          [i (in-naturals)]
+          #:when (equal? (hash-ref dict "type" #f) "data"))
+      (printf "~v~n" i)
+      (write-bytes (cipher-update aes-ctx (hash-ref dict "data")) lz4-stdin))
+    (write-bytes (cipher-final aes-ctx) lz4-stdin)
+    (close-output-port lz4-stdin)
+    (subprocess-wait lz4-proc)))
 
 (require 'recursive-impl)
 
