@@ -4,225 +4,146 @@
 (require racket/list)
 (require racket/match)
 (require racket/generator)
+(require base64)
 (require crypto)
 (require crypto/libcrypto)
 (require racket/system)
 (require (only-in file/sha1 hex-string->bytes))
 (require file/lz4)
 
-(require "parser.rkt")
 (require "crypto-related.rkt")
 
 (provide decrypt-ports decrypt-file)
+  
+(define (expect-byte expected)
+  (let ([actual (read-byte)])
+    (unless (equal? actual expected)
+      (raise-argument-error 'expect-byte (format "~v" expected) actual))))
 
+(define (expect-bytes expected)
+  (unless (equal? (read-bytes (bytes-length expected)) expected)
+    (error "Did not match")))
 
-(define (decrypt-impl-original password input-port output-port)
-  (define parsed-parts (parse-synology-port input-port))
-  (define encryption-struct (first parsed-parts))
-  #;(printf "E-struct ~v~n" encryption-struct)
+(define (read-bytes-with-len)
+  (let ([len (integer-bytes->integer (read-bytes 2) #f #t)])
+    (read-bytes len)
+    ))
+
+(define (read-string)
+  (expect-byte #x10)
+  (bytes->string/utf-8 (read-bytes-with-len)))
+
+(define (read-my-bytes)
+  (expect-byte #x11)
+  (read-bytes-with-len))
+
+(define (read-my-int)
+  (expect-byte #x01)
+  (let ([len (read-byte)])
+    (integer-bytes->integer (read-bytes len) #f #t)))
+
+(define (read-key)
+  (read-string))
+
+(define (read-value)
+  (case (peek-byte)
+    [(#x10) (read-string)]
+    [(#x11) (read-my-bytes)]
+    [(#x01) (read-my-int)]
+    [(#x42) (read-dict)]))
+
+(define (read-dict-entry)
+  (list (read-key) (read-value)))
+
+(define (read-dict)
+  (expect-byte #x42)
+  (begin0
+    (let ([dict (make-hash)])
+      (let loop ()
+        (unless (equal? (peek-byte) #x40)
+          (let ([entry (read-dict-entry)])
+            (hash-set! dict (first entry) (second entry)))
+          (loop)))
+      dict)
+    ; discard
+    (expect-byte #x40)))
+
+(define (read-encryption-info)
+  (let ([d (read-dict)])
+    (encryption-information
+     (equal? 1 (hash-ref d "compress"))
+     (hash-ref d "digest")
+     (base64-decode (hash-ref d "enc_key1"))
+     (base64-decode (hash-ref d "enc_key2"))
+     (equal? 1 (hash-ref d "encrypt"))
+     (hash-ref d "file_name")
+     (hash-ref d "key1_hash")
+     (hash-ref d "key2_hash")
+     (string->bytes/latin-1 (hash-ref d "salt"))
+     (hash-ref d "session_key_hash")
+     (hash-ref d "version"))))
+
+(define (recursive-parser-gen input-port)
+  (generator ()
+             (parameterize ([current-input-port input-port])
+               ; first read and discard the magic bytes
+               (expect-bytes #"__CLOUDSYNC_ENC__")
+               (expect-bytes  #"d8d6ba7b9df02ef39a33ef912a91dc56")
+
+               (yield (read-encryption-info))
+               (let loop ()
+                 (unless (eof-object? (peek-byte))
+                   (yield (read-dict))
+                   (loop)))
+               eof)))
+
+(define (decrypt-recursive password input-port decrypted-output-port)
+  (define generator (recursive-parser-gen input-port))
+  (define encryption-struct (generator))
   (define key-iv (let ([enc1-key (decrypted-enc1-key password encryption-struct)])
-                   #;(printf "enc1 key ~v~n" enc1-key)
                    (openssl-kdf (hex-string->bytes (bytes->string/latin-1 enc1-key)) (bytes) 32 16)))
-  (define data-dicts (second parsed-parts))
   (define aes-ctx (make-decrypt-ctx '(aes cbc) (first key-iv) (second key-iv)))
-  ; TODO(nikhilm): If there was a way to have a lazy port, then we could have an list of closures referring to the encrypted chunks (already in memory) instead of
-  ; a list of decrypted data (another set of data in memory).
-  (define decrypted-ports
-    (let ([num-of-chunks (length data-dicts)])
-      (for/list ([data-dict (in-list data-dicts)]
-                 [i (in-naturals)])
-        (let ([decrypted-port (open-input-bytes (cipher-update aes-ctx (hash-ref data-dict "data")))])
-          (if (eq? i (sub1 num-of-chunks))
-              ; cipher-final is wrinkly since it produces additional output that we must put somewhere
-              (input-port-append #f decrypted-port (open-input-bytes (cipher-final aes-ctx)))
-              decrypted-port)))))
-
-  (lz4-decompress-through-ports (apply input-port-append #f decrypted-ports) output-port)
-
-  ; TODO: md5 validation
- 
-  )
-
-(module recursive-impl racket/base
-  (require racket/port)
-  (require racket/list)
-  (require racket/match)
-  (require racket/generator)
-  (require base64)
-  (require crypto)
-  (require (only-in file/sha1 hex-string->bytes))
-  (require file/lz4)
-
-  ; TODO: won't be required once we de-dupe
-  (require "parser.rkt")
-  (require "crypto-related.rkt")
-  
-  (provide decrypt-impl-recursive)
-  
-  (define (expect-byte expected)
-    (let ([actual (read-byte)])
-      (unless (equal? actual expected)
-        (raise-argument-error 'expect-byte (format "~v" expected) actual))))
-
-  (define (expect-bytes expected)
-    (unless (equal? (read-bytes (bytes-length expected)) expected)
-      (error "Did not match")))
-
-  (define (read-bytes-with-len)
-    (let ([len (integer-bytes->integer (read-bytes 2) #f #t)])
-      (read-bytes len)
-      ))
-
-  (define (read-string)
-    (expect-byte #x10)
-    (bytes->string/utf-8 (read-bytes-with-len)))
-
-  (define (read-my-bytes)
-    (expect-byte #x11)
-    (read-bytes-with-len))
-
-  (define (read-my-int)
-    (expect-byte #x01)
-    (let ([len (read-byte)])
-      (integer-bytes->integer (read-bytes len) #f #t)))
-
-  (define (read-key)
-    (read-string))
-
-  (define (read-value)
-    (case (peek-byte)
-      [(#x10) (read-string)]
-      [(#x11) (read-my-bytes)]
-      [(#x01) (read-my-int)]
-      [(#x42) (read-dict)]))
-
-  (define (read-dict-entry)
-    (list (read-key) (read-value)))
-
-  (define (read-dict)
-    (expect-byte #x42)
-    (begin0
-      (let ([dict (make-hash)])
-        (let loop ()
-          (unless (equal? (peek-byte) #x40)
-            (let ([entry (read-dict-entry)])
-              (hash-set! dict (first entry) (second entry)))
-            (loop)))
-        dict)
-      ; discard
-      (expect-byte #x40)))
-
-  (define (read-encryption-info)
-    ; TODO dedupe with parser.rkt
-    (let ([d (read-dict)])
-      (encryption-information
-       (equal? 1 (hash-ref d "compress"))
-       (hash-ref d "digest")
-       (base64-decode (hash-ref d "enc_key1"))
-       (base64-decode (hash-ref d "enc_key2"))
-       (equal? 1 (hash-ref d "encrypt"))
-       (hash-ref d "file_name")
-       (hash-ref d "key1_hash")
-       (hash-ref d "key2_hash")
-       (string->bytes/latin-1 (hash-ref d "salt"))
-       (hash-ref d "session_key_hash")
-       (hash-ref d "version"))))
-
-  (define (recursive-parser-gen input-port)
-    (generator ()
-               (parameterize ([current-input-port input-port])
-                 ; first read the magic bytes
-                 (expect-bytes #"__CLOUDSYNC_ENC__")
-                 (expect-bytes  #"d8d6ba7b9df02ef39a33ef912a91dc56")
-
-                 ; now try to read the encryption information dictionary first.
-                 (yield (read-encryption-info))
-                 (let loop ()
-                   (unless (eof-object? (peek-byte))
-                     (yield (read-dict))
-                     (loop)))
-                 ; then data chunks
-                 ; then metadata
-                 eof)))
-
-  (define (decrypt-recursive password input-port decrypted-output-port)
-    (define generator (recursive-parser-gen input-port))
-    (define encryption-struct (generator))
-    (define key-iv (let ([enc1-key (decrypted-enc1-key password encryption-struct)])
-                     (openssl-kdf (hex-string->bytes (bytes->string/latin-1 enc1-key)) (bytes) 32 16)))
-    (define aes-ctx (make-decrypt-ctx '(aes cbc) (first key-iv) (second key-iv)))
     
-    (for ([dict (in-producer generator eof)]
-          [i (in-naturals)]
-          #:when (equal? (hash-ref dict "type" #f) "data"))
-      (write-bytes (cipher-update aes-ctx (hash-ref dict "data")) decrypted-output-port))
-    (write-bytes (cipher-final aes-ctx) decrypted-output-port))
+  (for ([dict (in-producer generator eof)]
+        [i (in-naturals)]
+        #:when (equal? (hash-ref dict "type" #f) "data"))
+    (write-bytes (cipher-update aes-ctx (hash-ref dict "data")) decrypted-output-port))
+  (write-bytes (cipher-final aes-ctx) decrypted-output-port))
 
-  ; using external lz4 process
-  #;
-  (define (decrypt-external-lz4 password input-port decrypted-output-port)
-    (define generator (recursive-parser-gen input-port))
-    (define encryption-struct (generator))
-    (define key-iv (let ([enc1-key (decrypted-enc1-key password encryption-struct)])
-                     (openssl-kdf (hex-string->bytes (bytes->string/latin-1 enc1-key)) (bytes) 32 16)))
-    (define aes-ctx (make-decrypt-ctx '(aes cbc) (first key-iv) (second key-iv)))
-    (match-define-values (decrypted-read-port decrypted-write-port) (make-pipe 8192))
-
-    (match-define-values (lz4-proc lz4-stdout lz4-stdin lz4-stderr)
-      (subprocess output-port #f #f
-                  "/usr/bin/lz4"
-                  "-d"))
-    (printf "~v ~v ~v ~v~n" lz4-proc lz4-stdin lz4-stdout lz4-stderr)
-
-    (for ([dict (in-producer generator eof)]
-          [i (in-naturals)]
-          #:when (equal? (hash-ref dict "type" #f) "data"))
-      (printf "~v~n" i)
-      (write-bytes (cipher-update aes-ctx (hash-ref dict "data")) lz4-stdin))
-    (write-bytes (cipher-final aes-ctx) lz4-stdin)
-    (close-output-port lz4-stdin)
-    (subprocess-wait lz4-proc))
-
-  (define (decrypt-racket-lz4 password input-port output-port)
-    (match-define-values (decrypted-read-port decrypted-write-port) (make-pipe 8192))
-    (define lz4-thread
-      (thread
-       (lambda () (lz4-decompress-through-ports decrypted-read-port output-port))))
-    (decrypt-recursive password input-port decrypted-write-port)
-    (close-output-port decrypted-write-port)
-    (thread-wait lz4-thread))
+(define (decrypt-racket-lz4 password input-port output-port)
+  (match-define-values (decrypted-read-port decrypted-write-port) (make-pipe 8192))
+  (define lz4-thread
+    (thread
+     (lambda () (lz4-decompress-through-ports decrypted-read-port output-port))))
+  (decrypt-recursive password input-port decrypted-write-port)
+  (close-output-port decrypted-write-port)
+  (thread-wait lz4-thread))
   
-  (define (decrypt-external-lz4 password input-port output-port)
-    (match-define-values (lz4-proc lz4-stdout lz4-stdin lz4-stderr)
-      (subprocess output-port #f #f
-                  "/usr/bin/lz4"
-                  "-d"))
-    (decrypt-recursive password input-port lz4-stdin)
-    (close-output-port lz4-stdin)
-    (close-input-port lz4-stderr)
-    (subprocess-wait lz4-proc))
+(define (decrypt-external-lz4 password input-port output-port)
+  (match-define-values (lz4-proc lz4-stdout lz4-stdin lz4-stderr)
+    (subprocess output-port #f #f
+                "/usr/bin/lz4"
+                "-d"))
+  (decrypt-recursive password input-port lz4-stdin)
+  (close-output-port lz4-stdin)
+  (close-input-port lz4-stderr)
+  (subprocess-wait lz4-proc))
 
-  (define (decrypt-impl-recursive password input-port output-port #:external-lz4 [use-external-lz4 #f])
-    ; TODO eventually also fall back if external lz4 does not exist.
-    ; right now the 1mb number is pulled out of thin air. needs benchmarking.
-    (if use-external-lz4
-        (decrypt-external-lz4 password input-port output-port)
-        (decrypt-racket-lz4 password input-port output-port))))
+(define (decrypt-impl-recursive password input-port output-port #:external-lz4 [use-external-lz4 #f])
+  (if use-external-lz4
+      (decrypt-external-lz4 password input-port output-port)
+      (decrypt-racket-lz4 password input-port output-port)))
 
+(define (decrypt-ports password input-port output-port #:external-lz4 [use-external-lz4 #f])
+  (decrypt-impl-recursive password input-port output-port #:external-lz4 use-external-lz4))
 
-(require 'recursive-impl)
-
-(define (decrypt-ports password input-port output-port #:implementation [implementation 'original] #:external-lz4 [use-external-lz4 #f])
-  (case implementation
-    [(original) (decrypt-impl-original password input-port output-port)]
-    [(recursive-descent)
-     
-     (decrypt-impl-recursive password input-port output-port #:external-lz4 use-external-lz4)]
-    [else (error "Unknown implementation")]))
-
-(define (decrypt-file input output #:implementation [implementation 'original])
+(define (decrypt-file input output #:external-lz4 [use-external-lz4 'decide])
   (define password (read-bytes-line))
-  (define use-external-lz4 (> (file-size input) (* 1024 1024)))
+  ; TODO eventually also fall back if external lz4 does not exist.
+  ; right now the 1mb number is pulled out of thin air. needs benchmarking.
+  (define external-lz4 (if (eq? use-external-lz4 'decide)
+                               (> (file-size input) (* 1024 1024))
+                               use-external-lz4))
   (call-with-input-file* input
     (lambda (input-port)
       ; TODO(nikhilm): Revert truncation to error, allow override for tests.
@@ -231,8 +152,7 @@
                                 (decrypt-ports password
                                                input-port
                                                output-port
-                                               #:implementation implementation
-                                               #:external-lz4 use-external-lz4)) #:exists 'truncate))))
+                                               #:external-lz4 external-lz4)) #:exists 'truncate))))
 
 (module+ main
   (require racket/cmdline)
@@ -244,4 +164,4 @@
   (command-line
    #:program "synology-decrypt"
    #:args (input output)
-   (decrypt-file input output #:implementation 'recursive-descent)))
+   (decrypt-file input output)))

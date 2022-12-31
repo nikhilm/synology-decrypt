@@ -1,7 +1,6 @@
 #lang info
 (define collection "synology-decrypt")
 (define deps '("base64-lib"
-               "binfmt"
                "crypto-lib"
                "lz4-lib"
                "base"))
