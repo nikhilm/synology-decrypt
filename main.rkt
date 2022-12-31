@@ -178,6 +178,7 @@
    "\nsynology-decrypt decrypts files encrypted by Synology Cloudsync."
    "<input> is the path to the encrypted file."
    "<output> is the path where decrypted output should be written."
+   "The password to use for decryption must be provided on stdin."
    #:args (input output)
    
    (crypto-factories (list libcrypto-factory))
