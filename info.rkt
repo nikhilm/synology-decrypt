@@ -5,7 +5,7 @@
                "crypto-lib"
                "lz4-lib"
                "base"))
-(define build-deps '("scribble-lib" "racket-doc" "rackunit-lib" "benchmark"))
+(define build-deps '("scribble-lib" "racket-doc" "rackunit-lib" "benchmark" "plot-lib"))
 (define scribblings '(("scribblings/synology-decrypt.scrbl" ())))
 (define pkg-desc "Description Here")
 (define version "0.0")
