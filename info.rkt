@@ -11,4 +11,3 @@
 (define version "0.0")
 (define pkg-authors '(me@nikhilism.com))
 (define license '(Apache-2.0))
-(define binary-omit-files '("benchmark.rkt"))
