@@ -139,6 +139,15 @@ TODO Describe in words.
      ))
  ]
 
-@section{References}
+@section{References and Acknowledgements}
 
-TODO Acknowledgements and references.
+All the work to reverse engineer the file format was done by others.
+
+@itemlist[
+ @item{Marnix Klooster's Python @hyperlink["https://github.com/marnix/synology-decrypt"]{synology-decrypt} implementation. This is the original reverse engineering of the encryption scheme and file format as far as I know. It was immensely useful!}
+ @item{@hyperlink["https://web.archive.org/web/20160606190954/https://global.download.synology.com/download/Document/WhitePaper/Synology_Cloud_Sync_White_Paper-Based_on_DSM_6.0.pdf"]{The Synology whitepaper}.}]
+
+This package relies on several Racket libraries.
+@itemlist[
+ @item{Bogdan Popa's @hyperlink["https://pkgs.racket-lang.org/package/binfmt"]{binfmt} package was invaluable in quickly parsing the file format, and their @hyperlink["https://pkgs.racket-lang.org/package/lz4"]{lz4} package was useful for decryption.}
+ @item{Ryan Culpepper's @hyperlink["https://pkgs.racket-lang.org/package/crypto"]{crypto} package for an excellent cryptography implementation wrapping OpenSSL.}]
