@@ -7,7 +7,7 @@
 (define results
   (run-benchmarks
    ; whats
-   '(original)
+   '(original recursive-descent)
    ; hows
    '()
    ; run

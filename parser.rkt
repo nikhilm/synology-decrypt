@@ -6,20 +6,7 @@
 (require racket/list)
 (require base64)
 (require (prefix-in synology: "format.b"))
-
-(struct encryption-information
-  (compressed
-   digest-type
-   enc_key1
-   enc_key2
-   encrypted
-   file_name
-   key1_hash
-   key2_hash
-   salt
-   session_key_hash
-   version)
-  #:transparent)
+(require "crypto-related.rkt")
 
 ; Thanks to binfmt author Bogdan Popa for this helper function.
 (define ref
