@@ -1,5 +1,5 @@
 #lang racket
-(require benchmark plot/pict "main.rkt" crypto crypto/libcrypto racket/file)
+(require benchmark plot/pict "../main.rkt" crypto crypto/libcrypto racket/file)
 
 (crypto-factories (list libcrypto-factory))
 
