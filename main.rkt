@@ -144,30 +144,23 @@
                  ; then data chunks
                  ; then metadata
                  eof)))
-#;
-  (define (decrypt-impl-recursive password input-port output-port)
+
+  (define (decrypt-recursive password input-port decrypted-output-port)
     (define generator (recursive-parser-gen input-port))
     (define encryption-struct (generator))
     (define key-iv (let ([enc1-key (decrypted-enc1-key password encryption-struct)])
                      (openssl-kdf (hex-string->bytes (bytes->string/latin-1 enc1-key)) (bytes) 32 16)))
     (define aes-ctx (make-decrypt-ctx '(aes cbc) (first key-iv) (second key-iv)))
-    (match-define-values (decrypted-read-port decrypted-write-port) (make-pipe 8192))
-
-    (define lz4-thread
-      (thread
-       (lambda () (lz4-decompress-through-ports decrypted-read-port output-port))))
-
+    
     (for ([dict (in-producer generator eof)]
           [i (in-naturals)]
           #:when (equal? (hash-ref dict "type" #f) "data"))
-      (printf "~v~n" i)
-      (write-bytes (cipher-update aes-ctx (hash-ref dict "data")) decrypted-write-port))
-    (write-bytes (cipher-final aes-ctx) decrypted-write-port)
-    (close-output-port decrypted-write-port)
-    (thread-wait lz4-thread))
+      (write-bytes (cipher-update aes-ctx (hash-ref dict "data")) decrypted-output-port))
+    (write-bytes (cipher-final aes-ctx) decrypted-output-port))
 
   ; using external lz4 process
-  (define (decrypt-impl-recursive password input-port output-port)
+  #;
+  (define (decrypt-external-lz4 password input-port decrypted-output-port)
     (define generator (recursive-parser-gen input-port))
     (define encryption-struct (generator))
     (define key-iv (let ([enc1-key (decrypted-enc1-key password encryption-struct)])
@@ -188,24 +181,58 @@
       (write-bytes (cipher-update aes-ctx (hash-ref dict "data")) lz4-stdin))
     (write-bytes (cipher-final aes-ctx) lz4-stdin)
     (close-output-port lz4-stdin)
-    (subprocess-wait lz4-proc)))
+    (subprocess-wait lz4-proc))
+
+  (define (decrypt-racket-lz4 password input-port output-port)
+    (match-define-values (decrypted-read-port decrypted-write-port) (make-pipe 8192))
+    (define lz4-thread
+      (thread
+       (lambda () (lz4-decompress-through-ports decrypted-read-port output-port))))
+    (decrypt-recursive password input-port decrypted-write-port)
+    (close-output-port decrypted-write-port)
+    (thread-wait lz4-thread))
+  
+  (define (decrypt-external-lz4 password input-port output-port)
+    (match-define-values (lz4-proc lz4-stdout lz4-stdin lz4-stderr)
+      (subprocess output-port #f #f
+                  "/usr/bin/lz4"
+                  "-d"))
+    (decrypt-recursive password input-port lz4-stdin)
+    (close-output-port lz4-stdin)
+    (close-input-port lz4-stderr)
+    (subprocess-wait lz4-proc))
+
+  (define (decrypt-impl-recursive password input-port output-port #:external-lz4 [use-external-lz4 #f])
+    ; TODO eventually also fall back if external lz4 does not exist.
+    ; right now the 1mb number is pulled out of thin air. needs benchmarking.
+    (if use-external-lz4
+        (decrypt-external-lz4 password input-port output-port)
+        (decrypt-racket-lz4 password input-port output-port))))
+
 
 (require 'recursive-impl)
 
-(define (decrypt-ports password input-port output-port #:implementation [implementation 'original])
+(define (decrypt-ports password input-port output-port #:implementation [implementation 'original] #:external-lz4 [use-external-lz4 #f])
   (case implementation
     [(original) (decrypt-impl-original password input-port output-port)]
-    [(recursive-descent) (decrypt-impl-recursive password input-port output-port)]
+    [(recursive-descent)
+     
+     (decrypt-impl-recursive password input-port output-port #:external-lz4 use-external-lz4)]
     [else (error "Unknown implementation")]))
 
 (define (decrypt-file input output #:implementation [implementation 'original])
   (define password (read-bytes-line))
+  (define use-external-lz4 (> (file-size input) (* 1024 1024)))
   (call-with-input-file* input
     (lambda (input-port)
       ; TODO(nikhilm): Revert truncation to error, allow override for tests.
       (call-with-output-file* output
                               (lambda (output-port)
-                                (decrypt-ports password input-port output-port #:implementation implementation)) #:exists 'truncate))))
+                                (decrypt-ports password
+                                               input-port
+                                               output-port
+                                               #:implementation implementation
+                                               #:external-lz4 use-external-lz4)) #:exists 'truncate))))
 
 (module+ main
   (require racket/cmdline)
