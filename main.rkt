@@ -3,10 +3,9 @@
 (require racket/port)
 (require racket/list)
 (require racket/match)
-(require base64)
 (require crypto)
-(require racket/system)
 (require crypto/libcrypto)
+(require racket/system)
 (require (only-in file/sha1 hex-string->bytes))
 (require file/lz4)
 
