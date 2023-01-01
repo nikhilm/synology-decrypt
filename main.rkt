@@ -120,7 +120,7 @@
   (thread-wait lz4-thread))
   
 (define (decrypt-external-lz4 password input-port output-port)
-  (define lz4-path (find-executable-path "lz5"))
+  (define lz4-path (find-executable-path "lz4"))
   (unless lz4-path
     (error "lz4 command not found. Please make sure it is installed and in the path."))
   (match-define-values (lz4-proc lz4-stdout lz4-stdin lz4-stderr)
