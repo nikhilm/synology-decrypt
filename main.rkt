@@ -14,7 +14,7 @@
 (require "crypto-related.rkt")
 
 (provide decrypt-ports decrypt-file)
-  
+
 (define (expect-byte expected)
   (let ([actual (read-byte)])
     (unless (equal? actual expected)
@@ -103,7 +103,7 @@
   (define key-iv (let ([enc1-key (decrypted-enc1-key password encryption-struct)])
                    (openssl-kdf (hex-string->bytes (bytes->string/latin-1 enc1-key)) (bytes) 32 16)))
   (define aes-ctx (make-decrypt-ctx '(aes cbc) (first key-iv) (second key-iv)))
-    
+
   (for ([dict (in-producer generator eof)]
         [i (in-naturals)]
         #:when (equal? (hash-ref dict "type" #f) "data"))
@@ -118,7 +118,7 @@
   (decrypt-recursive password input-port decrypted-write-port)
   (close-output-port decrypted-write-port)
   (thread-wait lz4-thread))
-  
+
 (define (decrypt-external-lz4 password input-port output-port)
   (define lz4-path (find-executable-path "lz4"))
   (unless lz4-path
@@ -171,7 +171,7 @@ In addition pass the encryption password to stdin. It will then decrypt
 the input file path using the password and write the decrypted file to
 the output file path.~n")
     (raise exn))
-  
+
   ; TODO: Allow password file to be specified on the command line
   (with-handlers ([exn:fail:user? additional-help])
     (command-line
@@ -190,6 +190,6 @@ the output file path.~n")
      "<output> is the path where decrypted output should be written."
      "The password to use for decryption must be provided on stdin."
      #:args (input output)
-   
+
      (crypto-factories (list libcrypto-factory))
      (decrypt-file input output #:external-lz4 use-external-lz4))))
