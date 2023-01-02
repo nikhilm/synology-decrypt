@@ -169,7 +169,7 @@
    #:once-each [("-V" "--version") "Print the version"
                                    (printf "synology-decrypt ~a~n" (package-info 'version)) (exit)]
    ["--external-lz4"
-    "Use the external lz4 program. By default, a heuristic is used to decide whether to use this based on the file size. lz4 should exist in the path."
+    "Use the external lz4 program, which is faster for large files. By default, a heuristic is used to decide whether to use this based on the file size. lz4 should exist in the path."
     (set! use-external-lz4 #t)]
    ["--no-external-lz4"
     "Do not use the external lz4 program. See --external-lz4."

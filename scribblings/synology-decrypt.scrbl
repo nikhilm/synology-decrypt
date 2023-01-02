@@ -36,7 +36,9 @@ This package can also be used as a library.
  void?]{
  Decrypts data from @racket[input-port], using @racket[password] as the password. Decrypted and decompressed data is written to @racket[output-port].
 
- If @racket[use-external-lz4?] is @racket[#t], the @hyperlink["https://github.com/lz4/lz4"]{@litchar{lz4}} is used. If it is missing in the system path, an error is raised.}
+ If @racket[use-external-lz4?] is @racket[#t], the @hyperlink["https://github.com/lz4/lz4"]{@litchar{lz4}} is used. If it is missing in the system path, an error is raised.
+
+The external lz4 program can be slightly faster for hundreds of MBs of data.}
 
 @defproc[
  (decrypt-file
