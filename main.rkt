@@ -132,20 +132,20 @@
   (close-input-port lz4-stderr)
   (subprocess-wait lz4-proc))
 
-(define (decrypt-impl-recursive password input-port output-port #:external-lz4 [use-external-lz4 #f])
-  (if use-external-lz4
+(define (decrypt-impl-recursive password input-port output-port #:external-lz4 [use-external-lz4? #f])
+  (if use-external-lz4?
       (decrypt-external-lz4 password input-port output-port)
       (decrypt-racket-lz4 password input-port output-port)))
 
-(define (decrypt-ports password input-port output-port #:external-lz4 [use-external-lz4 #f])
-  (decrypt-impl-recursive password input-port output-port #:external-lz4 use-external-lz4))
+(define (decrypt-ports password input-port output-port #:external-lz4 [use-external-lz4? #f])
+  (decrypt-impl-recursive password input-port output-port #:external-lz4 use-external-lz4?))
 
-(define (decrypt-file input output #:external-lz4 [use-external-lz4 'decide])
+(define (decrypt-file input output #:external-lz4 [use-external-lz4? 'decide])
   (define password (read-bytes-line))
-  ; right now the 1mb number is pulled out of thin air. needs benchmarking.
-  (define external-lz4 (if (eq? use-external-lz4 'decide)
-                           (and (> (file-size input) (* 1024 1024)) (find-executable-path "lz4"))
-                           use-external-lz4))
+  ; right now the 100mb number is pulled out of thin air. needs benchmarking.
+  (define external-lz4 (if (eq? use-external-lz4? 'decide)
+                           (and (> (file-size input) (* 100 1024 1024)) (find-executable-path "lz4"))
+                           use-external-lz4?))
   (call-with-input-file* input
     (lambda (input-port)
       ; TODO(nikhilm): Revert truncation to error, allow override for tests.
