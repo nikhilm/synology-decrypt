@@ -163,23 +163,33 @@
 
   (define package-info (get-info/full (pkg-directory "synology-decrypt")))
   (define use-external-lz4 'decide)
+
+  (define (additional-help exn)
+    (eprintf
+     "Please pass an input file path and output file path to run this program.
+In addition pass the encryption password to stdin. It will then decrypt
+the input file path using the password and write the decrypted file to
+the output file path.~n")
+    (raise exn))
+  
   ; TODO: Allow password file to be specified on the command line
-  (command-line
-   #:program "synology-decrypt"
-   #:once-each [("-V" "--version") "Print the version"
-                                   (printf "synology-decrypt ~a~n" (package-info 'version)) (exit)]
-   ["--external-lz4"
-    "Use the external lz4 program, which is faster for large files. By default, a heuristic is used to decide whether to use this based on the file size. lz4 should exist in the path."
-    (set! use-external-lz4 #t)]
-   ["--no-external-lz4"
-    "Do not use the external lz4 program. See --external-lz4."
-    (set! use-external-lz4 #f)]
-   #:usage-help
-   "\nsynology-decrypt decrypts files encrypted by Synology Cloudsync."
-   "<input> is the path to the encrypted file."
-   "<output> is the path where decrypted output should be written."
-   "The password to use for decryption must be provided on stdin."
-   #:args (input output)
+  (with-handlers ([exn:fail:user? additional-help])
+    (command-line
+     #:program "synology-decrypt"
+     #:once-each [("-V" "--version") "Print the version"
+                                     (printf "synology-decrypt ~a~n" (package-info 'version)) (exit)]
+     ["--external-lz4"
+      "Use the external lz4 program, which is faster for large files. By default, a heuristic is used to decide whether to use this based on the file size. lz4 should exist in the path."
+      (set! use-external-lz4 #t)]
+     ["--no-external-lz4"
+      "Do not use the external lz4 program. See --external-lz4."
+      (set! use-external-lz4 #f)]
+     #:usage-help
+     "\nsynology-decrypt decrypts files encrypted by Synology Cloudsync."
+     "<input> is the path to the encrypted file."
+     "<output> is the path where decrypted output should be written."
+     "The password to use for decryption must be provided on stdin."
+     #:args (input output)
    
-   (crypto-factories (list libcrypto-factory))
-   (decrypt-file input output #:external-lz4 use-external-lz4)))
+     (crypto-factories (list libcrypto-factory))
+     (decrypt-file input output #:external-lz4 use-external-lz4))))
