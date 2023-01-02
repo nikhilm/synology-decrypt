@@ -21,16 +21,34 @@ racket main.rkt <encrypted file path> <decrypted output path>
 
 When run like this, the program will read standard input to obtain the decryption password. Standard input is read to avoid leaking the password in shell history or in-memory process information. Type the password and press Ctrl+D to close standard input.
 
+Run with @litchar{--help} to see all the options.
+
 @section{Reference}
 
 This package can also be used as a library.
 
-@defproc[(decrypt-ports [password string?] [input-port input-port?] [output path-string?]) void?]{
+@defproc[
+ (decrypt-ports
+  [password string?]
+  [input-port input-port?]
+  [output path-string?]
+  [#:external-lz4 use-external-lz4? boolean? #f])
+ void?]{
  Decrypts data from @racket[input-port], using @racket[password] as the password. Decrypted and decompressed data is written to @racket[output-port].
-}
 
-@defproc[(decrypt-file [password string?] [input path-string?] [output-port output-port?]) void?]{
+ If @racket[use-external-lz4?] is @racket[#t], the @hyperlink["https://github.com/lz4/lz4"]{@litchar{lz4}} is used. If it is missing in the system path, an error is raised.}
+
+@defproc[
+ (decrypt-file
+  [password string?]
+  [input path-string?]
+  [output-port output-port?]
+  [#:external-lz4 use-external-lz4? (or/c boolean? 'decide)])
+ void?]{
  Decrypts data from the file with path @racket[input] which must be readable, using @racket[password] as the password. Decrypted and decompressed data is written to the path @racket[output].
+
+
+ If @racket[use-external-lz4?] is @racket['decide], some heuristics are used to decide whether to use internal or external lz4 based on the size of the file. If it is a @racket[boolean?] the semantics are that of @racket[decrypt-ports].
 }
 
 @section[#:tag "file-format"]{Encrypted File Format}
