@@ -1,8 +1,8 @@
 #lang info
 (define collection "synology-decrypt")
-(define deps '("base64-lib"
-               "crypto-lib"
-               "lz4-lib"
+(define deps '(("base64-lib" #:version "1.1")
+               ("crypto-lib" #:version "1.9")
+               ("lz4-lib" #:version "1.3")
                "base"))
 (define build-deps '("scribble-lib" "racket-doc" "rackunit-lib" "benchmark" "plot-lib"))
 (define scribblings '(("scribblings/synology-decrypt.scrbl" ())))
