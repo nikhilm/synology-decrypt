@@ -176,10 +176,12 @@
 
 (module+ main
   (require racket/cmdline)
+  (require racket/function)
   (require setup/getinfo)
   (require pkg/lib)
 
-  (define package-info (get-info/full (pkg-directory "synology-decrypt")))
+  (define version (with-handlers ([exn:fail? (const "unknown version")])
+                    ((get-info/full (pkg-directory "synology-decrypt")) 'version)))
   (define use-external-lz4 'decide)
 
   (define (additional-help exn)
@@ -195,7 +197,7 @@ the output file path.~n")
     (command-line
      #:program "synology-decrypt"
      #:once-each [("-V" "--version") "Print the version"
-                                     (printf "synology-decrypt ~a~n" (package-info 'version)) (exit)]
+                                     (printf "synology-decrypt ~a~n" version) (exit)]
      ["--external-lz4"
       "Use the external lz4 program, which is faster for large files. By default, a heuristic is used to decide whether to use this based on the file size. lz4 should exist in the path."
       (set! use-external-lz4 #t)]
