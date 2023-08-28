@@ -7,6 +7,6 @@
 (define build-deps '("scribble-lib" "racket-doc" "rackunit-lib" "benchmark" "plot-lib"))
 (define scribblings '(("scribblings/synology-decrypt.scrbl" ())))
 (define pkg-desc "A command line tool and library to decrypt Synology Cloudsync encrypted files.")
-(define version "0.3")
+(define version "0.4")
 (define pkg-authors '(me@nikhilism.com))
 (define license 'Apache-2.0)

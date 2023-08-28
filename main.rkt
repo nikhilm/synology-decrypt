@@ -104,20 +104,27 @@
                    (openssl-kdf (hex-string->bytes (bytes->string/latin-1 enc1-key)) (bytes) 32 16)))
   (define aes-ctx (make-decrypt-ctx '(aes cbc) (first key-iv) (second key-iv)))
 
-  (for ([dict (in-producer generator eof)]
-        [i (in-naturals)]
-        #:when (equal? (hash-ref dict "type" #f) "data"))
-    (write-bytes (cipher-update aes-ctx (hash-ref dict "data")) decrypted-output-port))
-  (write-bytes (cipher-final aes-ctx) decrypted-output-port))
+  (define expected-md5 #f)
+
+  (for ([dict (in-producer generator eof)])
+    (case (hash-ref dict "type")
+      [("data") (write-bytes (cipher-update aes-ctx (hash-ref dict "data")) decrypted-output-port)]
+      [("metadata") (let ([m (hash-ref dict "file_md5" #f)])
+                      (when m
+                        (set! expected-md5 m)))]
+      [else (error 'decrypt-recursive "Unexpected dict type ~v" (hash-ref dict "type"))]))
+  (write-bytes (cipher-final aes-ctx) decrypted-output-port)
+  expected-md5)
 
 (define (decrypt-racket-lz4 password input-port output-port)
   (match-define-values (decrypted-read-port decrypted-write-port) (make-pipe 8192))
   (define lz4-thread
     (thread
      (lambda () (lz4-decompress-through-ports decrypted-read-port output-port))))
-  (decrypt-recursive password input-port decrypted-write-port)
+  (define expected-md5 (decrypt-recursive password input-port decrypted-write-port))
   (close-output-port decrypted-write-port)
-  (thread-wait lz4-thread))
+  (thread-wait lz4-thread)
+  expected-md5)
 
 (define (decrypt-external-lz4 password input-port output-port)
   (define lz4-path (find-executable-path "lz4"))
@@ -127,10 +134,11 @@
     (subprocess output-port #f #f
                 lz4-path
                 "-d"))
-  (decrypt-recursive password input-port lz4-stdin)
+  (define expected-md5 (decrypt-recursive password input-port lz4-stdin))
   (close-output-port lz4-stdin)
   (close-input-port lz4-stderr)
-  (subprocess-wait lz4-proc))
+  (subprocess-wait lz4-proc)
+  expected-md5)
 
 (define (decrypt-impl-recursive password input-port output-port #:external-lz4 [use-external-lz4? #f])
   (if use-external-lz4?
@@ -146,15 +154,25 @@
   (define external-lz4 (if (eq? use-external-lz4? 'decide)
                            (and (> (file-size input) (* 100 1024 1024)) (find-executable-path "lz4"))
                            use-external-lz4?))
-  (call-with-input-file* input
+  (define expected-md5
+    (call-with-input-file* input
+      (lambda (input-port)
+        ; TODO(nikhilm): Revert truncation to error, allow override for tests.
+        (call-with-output-file* output
+                                (lambda (output-port)
+                                  (decrypt-ports password
+                                                 input-port
+                                                 output-port
+                                                 #:external-lz4 external-lz4)) #:exists 'truncate))))
+  (when expected-md5
+    (verify-md5 expected-md5 output)))
+
+(define (verify-md5 expected fpath)
+  (call-with-input-file* fpath
     (lambda (input-port)
-      ; TODO(nikhilm): Revert truncation to error, allow override for tests.
-      (call-with-output-file* output
-                              (lambda (output-port)
-                                (decrypt-ports password
-                                               input-port
-                                               output-port
-                                               #:external-lz4 external-lz4)) #:exists 'truncate))))
+      (define actual (bytes->string/utf-8 (md5 input-port)))
+      (unless (equal? expected actual)
+        (error 'verify-md5 "Expected decrypted file ~v to have md5 hash ~v. Got ~v." fpath expected actual)))))
 
 (module+ main
   (require racket/cmdline)
