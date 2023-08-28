@@ -31,10 +31,11 @@ This package can also be used as a library.
  (decrypt-ports
   [password string?]
   [input-port input-port?]
-  [output path-string?]
+  [output-port output-port?]
   [#:external-lz4 use-external-lz4? boolean? #f])
- void?]{
+ (or/c string? #f)]{
  Decrypts data from @racket[input-port], using @racket[password] as the password. Decrypted and decompressed data is written to @racket[output-port].
+ If the encrypted file metadata contained @tt{file_md5} containing the md5 hash of the original file, returns that, otherwise returns @racket[#f].
 
  If @racket[use-external-lz4?] is @racket[#t], the @hyperlink["https://github.com/lz4/lz4"]{@litchar{lz4}} is used. If it is missing in the system path, an error is raised.
 
@@ -44,10 +45,11 @@ The external lz4 program can be slightly faster for hundreds of MBs of data.}
  (decrypt-file
   [password string?]
   [input path-string?]
-  [output-port output-port?]
+  [output path-string?]
   [#:external-lz4 use-external-lz4? (or/c boolean? 'decide)])
  void?]{
  Decrypts data from the file with path @racket[input] which must be readable, using @racket[password] as the password. Decrypted and decompressed data is written to the path @racket[output].
+ If the encrypted file metadata had the original file's md5 checksum, verifies that the decrypted output's hash matches that. Raises an error on mismatch.
 
 
  If @racket[use-external-lz4?] is @racket['decide], some heuristics are used to decide whether to use internal or external lz4 based on the size of the file. If it is a @racket[boolean?] the semantics are that of @racket[decrypt-ports].
