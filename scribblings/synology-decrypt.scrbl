@@ -4,7 +4,7 @@
                     racket/base]]
 
 @title{synology-decrypt}
-@author[(author+email "Nikhil Marathe" "me@nikhilism.com")]
+@author[(author+email "Nikhil Marathe" "racket-packages@me.nikhilism.com")]
 
 @defmodule[synology-decrypt]
 
